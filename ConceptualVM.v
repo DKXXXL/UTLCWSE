@@ -26,11 +26,12 @@ Module ConceptualVM.
                 VC_Reg id2 ty regnum ->
                 VC_Reg id3 ty regnum ->
                 C_op regnum
-  | _op_alloc : forall id1,
+(*  | _op_alloc : forall id1,
                   VC_Reg id1 _t_pt regnum ->
                   unit_ptlong ->
                   C_op regnum
-  (* Infinite Memory *)
+*)  
+(* Infinite Memory *)
   | _op_load : forall id1 id2 ty ,
                  VC_Reg id1 ty regnum ->
                  VC_Reg id2 _t_pt regnum ->
@@ -41,6 +42,11 @@ Module ConceptualVM.
                   C_op regnum
   | _op_label : nat -> C_op regnum
   | _op_jump : nat -> C_op regnum
+  | _op_if: forall id1,
+              VC_Reg id1 _t_bool regnum ->
+              list (C_op regnum) ->
+              list (C_op regnum) ->
+              C_op regnum
   | _op_eq : forall ty id1 id2 id3,
                VC_Reg id1 ty regnum ->
                VC_Reg id2 ty regnum ->
@@ -83,7 +89,7 @@ Module ConceptualVM.
   Definition S_Stack := list nat.
   Definition VS_Stack (ptlength :nat) (x:S_Stack) := (forall y, In y x -> y < ptlength). 
   
-  Inductive C_Mach_State (regnum ptlength : nat) (registers:S_Regs) (stack:S_Stack)
+  Inductive C_Mach_State {regnum ptlength : nat} (registers:S_Regs) (stack:S_Stack)
   :VS_Regs regnum ptlength registers ->
    VS_Stack ptlength stack ->
    C_Program regnum ->
@@ -91,11 +97,11 @@ Module ConceptualVM.
   | cms : forall (p: VS_Regs regnum ptlength registers)
                  (q: VS_Stack ptlength stack)
                  (runned unrunned : C_Program regnum),
-            C_Mach_State regnum ptlength registers stack p q runned unrunned.
+            C_Mach_State registers stack p q runned unrunned.
   
 
   Parameter pt_length : nat.
   Parameter reg_num : nat.
   (* Unlimited Register Number*)
-  Definition CMS := C_Mach_State reg_num pt_length.
-  
+  Definition CMS := C_Mach_State (regnum := reg_num) (ptlength := pt_length).
+End ConceptualVM.
