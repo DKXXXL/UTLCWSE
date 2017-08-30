@@ -8,7 +8,8 @@ Definition disjoint_sum (A B : Prop) : Prop :=
     (A \/ B) /\ (A -> ~ B).
 
 Definition ctxId := id.
-
+(* Dynamic Typed Lambda calculus with fixpoint,
+ type inference is nt so trivial*)
 Inductive ty : Type :=
     | TList : ty -> ty 
     | TNum : ty 
