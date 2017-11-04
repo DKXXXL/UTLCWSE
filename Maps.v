@@ -15,7 +15,7 @@ Theorem eq_id_dec :
 Qed.
 
 Theorem eq_id_dec_id:
-  forall (A:Set) (t f:A) x,
+  forall (A:Type) (t f:A) x,
    (if (eq_id_dec x x) then t else f) = t.
 
   intros; case (eq_id_dec x x); auto.
