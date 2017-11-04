@@ -1,7 +1,11 @@
-Require Import SfLib.
+Require Import Maps.
 Require Import Coq.Strings.String.
 Require Import Quotient.
+Import Quotient.Quotient.
+Require Import Context.
 Module UTLCWOSE.
+
+
     
 Definition literal := string.
 
@@ -42,18 +46,40 @@ Inductive tm : Type :=
     | SVar : id -> tm
     | STrue : tm 
     | SFalse : tm 
-    | SNum : Quotient.Quot -> tm 
+    | SNum : Quot -> tm 
     (* All Quotient *)
     | SDouble : literal -> tm
     | SString : literal -> tm 
     | SPair : tm -> tm -> tm
-    | SFun : id -> tm -> ctxId -> tm
+    | SFun : id -> tm  -> tm
     | SSymbol : tm -> tm
     (* Statement *)
     | SSeq : tm -> tm -> tm
     | SLet : id -> tm -> tm -> tm.
 
+Fixpoint subst (i : id) (to : tm) (org : tm) : tm :=
+    match org with
+    | pairp k => pairp (subst i to k)
+    | car p => car (subst i to p)
+    | cdr p => cdr (subst i to p)
+    | cond j b1 b2 => cond (subst i to j) (subst i to b1) (subst i to b2)
+    | sapp f x => sapp (subst i to f) (subst i to x)
+    | sadd n m => sadd (subst i to n) (subst i to m)
+    | smult n m => smult (subst i to n) (subst i to m)
+    | sneg n => sneg (subst i to n)
+    | sinverse n => sinverse (subst i to n)
+    | scomp n m => scomp (subst i to n) (subst i to m)
+    | SVar i' => if (eq_id_dec i i') then to else org
+    | SPair p1 p2 => SPair (subst i to p1) (subst i to p2)
+    | SFun x body => if (eq_id_dec i x) then org else SFun x (subst i to body)
+    | SSeq b1 b2 => SSeq (subst i to b1) (subst i to b2)
+    | SLet s bind body => if (eq_id_dec i s) 
+                            then SLet s (subst i to bind) body
+                            else SLet s (subst i to bind) (subst i to body)
+    | _ => org
+    end.
 
+Notation " [ x := y ] k" := (subst x y k) (at level 50).
 Inductive Value : tm -> Prop :=
     | vTrue : Value STrue
     | vFalse : Value SFalse
@@ -64,11 +90,18 @@ Inductive Value : tm -> Prop :=
         Value pre ->
         Value post ->
         Value (SPair pre post)
-    | vFun : forall id tm ctx, 
-        Value (SFun id tm ctx)
+    | vFun : forall id tm, 
+        Value (SFun id tm)
     | vSymbol : forall q pre post,
             q <> (SPair pre post) ->
             Value (SSymbol q).
+
+Definition Env := Context.Context (type := tm).
+
+(* I should make (Value tm)*)
+
+
+
 
 
 Inductive step : tm -> tm -> Prop :=
@@ -112,7 +145,9 @@ Inductive step : tm -> tm -> Prop :=
                 Value f ->
                 step x x' ->
                 step (sapp f x) (sapp f x')
-    | sapp2 : forall id body 
+    | sapp2 : forall id body arg,
+                Value arg ->
+                step (sapp (SFun id body) arg) ([ id := arg ] body)
     | sadd0 : forall a a' b,
                 step a a' ->
                 step (sadd a b) (sadd a' b)
@@ -152,9 +187,22 @@ Inductive step : tm -> tm -> Prop :=
                 step (scomp a b) (scomp a b')
     | scomp2 : forall a b,
                 step (scomp (SNum a) (SNum b)) (SNum (qcomp a b))
-    | 
-    
-    
+    | ssymbol : forall a b,
+                step (SSymbol (SPair a b)) (SPair (SSymbol a) (SSymbol b))
+    | sseq0 : forall a a' b,
+                step a a' ->
+                step (SSeq a b) (SSeq a' b)
+    | sseq1 : forall a b b',
+                Value a ->
+                step b b' ->
+                step (SSeq a b) b'
+    | slet0 : forall i bind bind' body,
+                step bind bind' ->
+                step (SLet i bind body) (SLet i bind' body)
+    | slet1 : forall i bind body,
+                Value bind ->
+                step (SLet i bind body) ([ i := bind] body).
+   
 
 
 
