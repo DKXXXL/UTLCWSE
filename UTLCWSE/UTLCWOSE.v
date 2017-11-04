@@ -222,7 +222,11 @@ Definition first {A B: Type} (x : A * B) : A :=
     match x with
         | (a, b) => a
     end.
-        
+
+Definition second {A B: Type} (x : A * B) : B :=
+    match x with
+        | (a, b) => b
+    end.
 
 Definition stuck ( term : tm * Output) : Prop :=
     (~ Value (first term)) \/ (~ exists next, term ==> next).
@@ -234,6 +238,25 @@ Inductive TRC {Z : Type} (rel : Z -> Z -> Prop) : Z -> Z -> Prop :=
 Definition multistep := TRC step.
 
 Notation "a ==>* b" := (multistep a b) (at level 29).
+
+Inductive machine {Z : Type} (step : Z -> Z -> Prop) : nat -> Z -> Prop :=
+    | mO : forall n x,
+            machine step n x ->
+            (~ exists next, step x next) ->
+            machine step 0 x
+    | mS : forall n x y, 
+            machine step (S n) x ->
+            step x y ->
+            machine step n y.
+
+Definition machStep := machine step.
+
+Definition intepreterCorrect (intep : nat -> tm -> Output) :=
+    forall (n : nat) (t : tm) (mach : machStep n (t, nil)), 
+    exists (m: nat) (t' : tm), machStep 0 (t', intep m t).
+
+
+
 
 
 
