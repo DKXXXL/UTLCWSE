@@ -6,6 +6,7 @@ Require Import Quotient.
 Import Quotient.Quotient.
 Require Import Context.
 Require Import Coq.Lists.List.
+Require Import LibTactics.
 
 Module UTLCWOSE.
 
@@ -36,6 +37,7 @@ Inductive tm : Type :=
     (* Predicate *)
     (*| atomp : tm -> tm *)
     | pairp : tm -> tm 
+    | zerop : tm -> tm
     (* Operator*) 
     | car : tm -> tm 
     | cdr : tm -> tm 
@@ -46,7 +48,6 @@ Inductive tm : Type :=
     | sneg : tm -> tm
     | sinverse : tm -> tm 
     | scomp : tm -> tm -> tm 
-    | soutput : tm -> tm
     (* Constructor *)
     | SVar : id -> tm
     | STrue : tm 
@@ -60,7 +61,11 @@ Inductive tm : Type :=
     | SSymbol : tm -> tm
     (* Statement *)
     | SSeq : tm -> tm -> tm
-    | SLet : id -> tm -> tm -> tm.
+    | SLet : id -> tm -> tm -> tm
+    | SFix : id -> id -> tm -> tm
+    | SSys : id -> tm -> tm.
+
+Hint Constructors tm.
 
 Fixpoint subst (i : id) (to : tm) (org : tm) : tm :=
     match org with
@@ -74,7 +79,7 @@ Fixpoint subst (i : id) (to : tm) (org : tm) : tm :=
     | sneg n => sneg (subst i to n)
     | sinverse n => sinverse (subst i to n)
     | scomp n m => scomp (subst i to n) (subst i to m)
-    | soutput x => soutput (subst i to x)
+    | SSys d x => SSys d (subst i to x)
     | SVar i' => if (eq_id_dec i i') then to else org
     | SPair p1 p2 => SPair (subst i to p1) (subst i to p2)
     | SFun x body => if (eq_id_dec i x) then org else SFun x (subst i to body)
@@ -82,6 +87,11 @@ Fixpoint subst (i : id) (to : tm) (org : tm) : tm :=
     | SLet s bind body => if (eq_id_dec i s) 
                             then SLet s (subst i to bind) body
                             else SLet s (subst i to bind) (subst i to body)
+    | SFix f x body => if (eq_id_dec i f)
+                            then org
+                            else if (eq_id_dec i x)
+                                then org
+                                else SFix f x (subst i to body)
     
     | _ => org
     end.
@@ -99,9 +109,14 @@ Inductive Value : tm -> Prop :=
         Value (SPair pre post)
     | vFun : forall id tm, 
         Value (SFun id tm)
-    | vSymbol : forall q pre post,
-            q <> (SPair pre post) ->
+    | vFix : forall idf idx tm,
+        Value (SFix idf idx tm)
+    | vSymbol : forall q,
+            (forall pre post,
+            q <> (SPair pre post)) ->
             Value (SSymbol q).
+
+Hint Constructors Value.
 
 Definition Env := Context.Context (type := tm).
 
@@ -109,7 +124,7 @@ Definition Env := Context.Context (type := tm).
 
 
 
-Definition Output := list tm.
+Definition Output := list (id * tm).
 
 
 Inductive step : (tm * Output) -> (tm * Output) -> Prop :=
@@ -120,9 +135,9 @@ Inductive step : (tm * Output) -> (tm * Output) -> Prop :=
                 Value j ->
                 j = SPair pre post ->
                 step ((pairp j), o1) (STrue, o1)
-    | spairpF : forall j pre post o1,
+    | spairpF : forall j o1,
                 Value j ->
-                j <> SPair pre post ->
+                (forall pre post, j <> SPair pre post) ->
                 step ((pairp j), o1) (SFalse, o1)
     | scar0 : forall j j' o1 o2,
                 step (j, o1) (j' , o2) ->
@@ -155,6 +170,9 @@ Inductive step : (tm * Output) -> (tm * Output) -> Prop :=
     | sapp2 : forall id body arg o1,
                 Value arg ->
                 step ((sapp (SFun id body) arg), o1) (([ id := arg ] body), o1)
+    | sapp3 : forall idf idx body arg o1,
+                Value arg ->
+                step ((sapp (SFix idf idx body) arg), o1) (([idf := (SFix idf idx body)] [idx := arg] body), o1)
     | sadd0 : forall a a' b o1 o2,
                 step (a, o1) (a', o2) ->
                 step ((sadd a b), o1) ((sadd a' b), o2)
@@ -178,7 +196,7 @@ Inductive step : (tm * Output) -> (tm * Output) -> Prop :=
                 step (a, o1) (a', o2) ->
                 step ((sneg a), o1) ((sneg a'), o2)
     | sneg1 : forall a o1,
-                step ((SNum a), o1) ((SNum (qneg a)), o1)
+                step ((sneg (SNum a)), o1) ((SNum (qneg a)), o1)
     | sinv0 : forall a a' o1 o2,
                 step (a, o1) (a', o2) ->
                 step ((sinverse a), o1) ((sinverse a'), o2)
@@ -195,12 +213,13 @@ Inductive step : (tm * Output) -> (tm * Output) -> Prop :=
     | scomp2 : forall a b o1,
                 step ((scomp (SNum a) (SNum b)), o1) ((SNum (qcomp a b)), o1)
     
-    | soutput0 : forall a a' o1 o2,
-                step (a, o1) (a', o2) ->
-                step ((soutput a), o1) ((soutput a'), o2)
-    | soutput1 : forall a o1,
-                Value a ->
-                step ((soutput a), o1) (STrue, (cons a o1))
+
+    | ssys0 : forall d a a' o1 o2,
+                    step (a, o1) (a', o2) ->
+                    step (SSys d a, o1) (SSys d a', o2)
+    | ssys1 : forall d a o1,
+                    Value a ->
+                    step (SSys d a, o1) (STrue, (d,a):: o1)
     | ssymbol : forall a b o1,
                 step ((SSymbol (SPair a b)), o1) ((SPair (SSymbol a) (SSymbol b)), o1)
     | sseq0 : forall a a' b o1 o2,
@@ -217,6 +236,8 @@ Inductive step : (tm * Output) -> (tm * Output) -> Prop :=
                 step ((SLet i bind body), o1) (([ i := bind ] body), o1).
    
 Notation "a ==> b" := (step a b) (at level 30).
+
+Hint Constructors step.
 
 Definition first {A B: Type} (x : A * B) : A :=
     match x with
@@ -239,30 +260,135 @@ Definition multistep := TRC step.
 
 Notation "a ==>* b" := (multistep a b) (at level 29).
 
-Inductive machine {Z : Type} (step : Z -> Z -> Prop) : nat -> Z -> Prop :=
-    | mO : forall n x,
-            machine step n x ->
-            (~ exists next, step x next) ->
-            machine step 0 x
-    | mS : forall n x y, 
-            machine step (S n) x ->
-            step x y ->
-            machine step n y.
+Inductive machine {P O : Type} 
+    (step : P*(list O) -> P*(list O) -> Prop) 
+    (program : P) : P -> nat -> list O -> Prop :=
+    | mO : machine step program program 0 nil
+    | mS : forall (a a' : P) (o1 o2 : list O) n,
+        machine step program a n o1 ->
+        step (a, o1) (a', o2) ->
+        machine step program a' (S n) o2.
 
 Definition machStep := machine step.
 
 Definition intepreterCorrect (intep : nat -> tm -> Output) :=
-    forall (n : nat) (t : tm) (mach : machStep n (t, nil)), 
-    exists (m: nat) (t' : tm), machStep 0 (t', intep m t).
+    forall (n : nat) (t t': tm) (o : Output) 
+    (mach : machStep t t' n o), 
+    exists (m: nat) (t' : tm), intep m t = o.
+
+
+Definition transformationCorrect (transf : tm -> tm) :=
+    forall (n : nat) (t t': tm) (o : Output) (mach : machStep t t' n o),
+    exists (m:nat) (t'' : tm), machStep (transf t) t' m o.
+
+Definition determinism {Z : Type} (step : Z -> Z -> Prop) :=
+    forall x y1 y2, 
+        step x y1 ->
+        step x y2 ->
+        y1 = y2.
+
+Ltac general_val_ X u v :=
+        match v with
+          | 0 => X;(generalize dependent u)
+          | _ => general_val_ ltac:(X; generalize dependent u) v
+        end.
+    
+Ltac glize := general_val_ idtac.
+
+Ltac forwardALL :=
+    match goal with
+     | H : ( _ -> _) |- _ => forwards* : H; generalize H; clear H; forwardALL
+     | H : _ |- _ => idtac; intros
+     end.
+
+
+     Theorem Value_not_Steppable:
+     forall x y o1 o2,
+         Value x ->
+         ~ (step (x, o1) (y, o2)).
+ 
+     unfold not; intros x y o1 o2 h1;
+     glize y o1 o2 0.
+     induction h1; intros o2 o1 y h2; 
+     inversion h2; subst.
+     destruct (H a b eq_refl).
+ Qed.
+ 
+
+Ltac getInfo :=
+ match goal with
+ | H : (_,_) = _ |- _ => inversion H; subst; (try clear H) ; getInfo
+ | |- _ => idtac
+ end.
+
+
+Ltac contra_ValueNotSteppable :=
+try (intros;subst;
+    match goal with
+    | H0 : (step (?X, _) _) , H1 : Value ?X |- _ =>
+    (destruct (Value_not_Steppable _ _ _ _ H1 H0); fail)
+    | H0 : (step (_ ?X, _) _) , H1 : Value ?X |- _ =>
+        (inversion H0; subst; try (clear H0; contra_ValueNotSteppable); fail)
+    | |- _ => idtac
+    end
+).
+
+
+Ltac IntroDestructAndAuto_Step :=
+try (intros;subst;
+try match goal with
+| H : step (_ _ ,_) _ |- _ => inversion H; subst; clear H
+end; 
+subst;
+forwardALL; subst;
+try contra_ValueNotSteppable;
+try match goal with
+| H : _ = _ |- _ => inversion H; subst; clear H
+end;
+eauto
+).
+
+Ltac cpos H :=
+    pose H as HIHIHI; generalize HIHIHI; clear HIHIHI; intro.
 
 
 
 
 
+    Ltac Strong_contra_ValueNotSteppable :=
+    try (
+       match goal with
+       | H: step (?X, _) _ |- _ => 
+       assert (Value X); idtac X; eauto; 
+       contra_ValueNotSteppable ; fail
+       | H: step (?P ?X, _) _ |- _ =>
+           inversion H; subst; clear H; Strong_contra_ValueNotSteppable; fail
+       | |- _ => idtac
+       end
+    ).
+   
 
+Lemma detStep0 :
+    forall x y y' o1 o2 o3,
+        step (x, o1) (y, o2) ->
+        step (x, o1) (y', o3) ->
+        y = y'.
 
-
-
-
-
+    intros x y y' o1 o2 o3 h1;
+    glize y' o3 0. 
+    remember (x, o1) as s1;
+    remember (y, o2) as s2.
+    glize x y o1 o2 0.
+    induction h1;
+    intros; getInfo;
+    IntroDestructAndAuto_Step;
+    Strong_contra_ValueNotSteppable.
+    
+    destruct (H6 pre post eq_refl).
+    destruct (H0 pre post eq_refl).
+    assert (qinv a p = qinv a p0);
+    try eapply qinv_det;subst; eauto.
+    rewrite H; auto.
+Qed.
+    
 

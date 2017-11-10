@@ -80,6 +80,17 @@ Definition qcomp (a b:Quot) : Quot :=
     else if (qlt a b)
          then (quot (-1) 1)
          else (quot 0 1).
+    
+Theorem qinv_det :
+    forall a p1 p2,
+        qinv a p1 = qinv a p2.
+    
+    intros a;
+    induction a.
+    intros. destruct z; auto.
+    destruct (p1 (eq0 _)).
+Qed.
+
 
 End Quotient.
 
