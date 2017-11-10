@@ -249,8 +249,11 @@ Definition second {A B: Type} (x : A * B) : B :=
         | (a, b) => b
     end.
 
+Definition no_next (term : tm * Output) : Prop :=
+    (~exists next, term ==> next).
+
 Definition stuck ( term : tm * Output) : Prop :=
-    (~ Value (first term)) \/ (~ exists next, term ==> next).
+    (~ Value (first term)) \/ (no_next term).
 
 Inductive TRC {Z : Type} (rel : Z -> Z -> Prop) : Z -> Z -> Prop :=
     | trcRefl : forall (x : Z), ((TRC rel) x x)
@@ -262,14 +265,19 @@ Notation "a ==>* b" := (multistep a b) (at level 29).
 
 Inductive machine {P O : Type} 
     (step : P*(list O) -> P*(list O) -> Prop) 
+    (value : P -> Prop)
     (program : P) : P -> nat -> list O -> Prop :=
-    | mO : machine step program program 0 nil
+    | mO : machine step value program program 0 nil
     | mS : forall (a a' : P) (o1 o2 : list O) n,
-        machine step program a n o1 ->
+        machine step value program a n o1 ->
         step (a, o1) (a', o2) ->
-        machine step program a' (S n) o2.
-
-Definition machStep := machine step.
+        machine step value program a' (S n) o2
+    | mP : forall t' n o,
+        machine step value program t' n o ->
+        value t' ->
+        machine step value program t' (S n) o.
+(*
+Definition machStep := machine step Value.
 
 Definition intepreterCorrect (intep : nat -> tm -> Output) :=
     forall (n : nat) (t t': tm) (o : Output) 
@@ -280,7 +288,7 @@ Definition intepreterCorrect (intep : nat -> tm -> Output) :=
 Definition transformationCorrect (transf : tm -> tm) :=
     forall (n : nat) (t t': tm) (o : Output) (mach : machStep t t' n o),
     exists (m:nat) (t'' : tm), machStep (transf t) t' m o.
-
+*)
 Definition determinism {Z : Type} (step : Z -> Z -> Prop) :=
     forall x y1 y2, 
         step x y1 ->
@@ -359,7 +367,7 @@ Ltac cpos H :=
     try (
        match goal with
        | H: step (?X, _) _ |- _ => 
-       assert (Value X); idtac X; eauto; 
+       assert (Value X);  eauto; 
        contra_ValueNotSteppable ; fail
        | H: step (?P ?X, _) _ |- _ =>
            inversion H; subst; clear H; Strong_contra_ValueNotSteppable; fail
@@ -373,6 +381,43 @@ Lemma detStep0 :
         step (x, o1) (y, o2) ->
         step (x, o1) (y', o3) ->
         y = y'.
+Proof.
+
+    intros x y y' o1 o2 o3 h1;
+    glize y' o3 0. 
+    remember (x, o1) as s1;
+    remember (y, o2) as s2.
+    glize x y o1 o2 0.
+    induction h1;
+    intros; getInfo;
+        IntroDestructAndAuto_Step;
+        Strong_contra_ValueNotSteppable.
+    destruct (H6 pre post eq_refl).
+    destruct (H0 pre post eq_refl).                                                  
+    assert (qinv a p = qinv a p0);
+    try eapply qinv_det;subst; eauto.
+    rewrite H; auto.
+
+(* It's said to be the side effect from eauto. 
+    No worry.
+*)
+    Unshelve.
+    Strong_contra_ValueNotSteppable.
+    Strong_contra_ValueNotSteppable.
+    auto. auto.
+    Strong_contra_ValueNotSteppable.
+    Strong_contra_ValueNotSteppable.
+    auto. auto.
+    auto. auto. 
+ 
+Qed.
+    
+
+Lemma detStep1:
+    forall x y y' o1 o2 o3,
+        step (x, o1) (y, o2) ->
+        step (x, o1) (y', o3) ->
+            o2 = o3.
 
     intros x y y' o1 o2 o3 h1;
     glize y' o3 0. 
@@ -383,12 +428,116 @@ Lemma detStep0 :
     intros; getInfo;
     IntroDestructAndAuto_Step;
     Strong_contra_ValueNotSteppable.
-    
-    destruct (H6 pre post eq_refl).
-    destruct (H0 pre post eq_refl).
-    assert (qinv a p = qinv a p0);
-    try eapply qinv_det;subst; eauto.
-    rewrite H; auto.
+    (* Again ..*)
+    Unshelve. 
+    Strong_contra_ValueNotSteppable.
+    Strong_contra_ValueNotSteppable.
+    auto. auto.
+    Strong_contra_ValueNotSteppable.
+    Strong_contra_ValueNotSteppable.
+    auto. auto.
+    auto. auto.
 Qed.
-    
 
+Theorem step_determinsm:
+    determinism step.
+    unfold determinism.
+    intros.
+    destruct x;
+    destruct y1;
+    destruct y2.
+    assert (t0 = t1). eapply detStep0; eauto.
+    assert (o0 = o1). eapply detStep1; eauto.
+    subst; auto.
+Qed.
+
+
+(*
+    Classify Unstuck Program.
+    Without typing it.
+    It's the most important part;
+    or I cannot do induction on 'tm'.
+*)
+
+(*
+    After Consideration,
+    unstuck program is hard to classify without
+    the help of typing. (And I also want sthing strong as sum type)
+    (At least the two branch of if can give different type)
+    So I only deal with those without free variable.
+    And that makes the 'value' of the 'machine' changes
+    to 'stuck' (no next step).
+    I hope that makes things easier.
+*)
+
+(*
+    The Whole VEmeschc is to verify:
+        cps transform;
+        name elimination;
+        backend;
+    Three parts. 
+    A 'closed' program is all this need to compile.
+    It's actually a variation of Emeschc.
+    Parser and ToC is not going to be verified.
+*)
+
+(*
+    Later, proof will largely be inductions on
+    a closed program.
+    I need an algorithm to check a 'tm' is closed or not.
+*)
+
+Definition no_step (t : tm) :=
+    forall o, no_next (t, o).
+
+Definition machStep := machine step no_step.
+
+Definition intepreterCorrect (intep : nat -> tm -> Output) :=
+    forall (n : nat) (t t': tm) (o : Output) 
+    (mach : machStep t t' n o), 
+    exists (m: nat) (t' : tm), intep m t = o.
+
+
+Definition transformationCorrect (transf : tm -> tm) :=
+    forall (n : nat) (t t': tm) (o : Output) (mach : machStep t t' n o),
+    exists (m:nat) (t'' : tm), machStep (transf t) t' m o.
+
+Inductive free : id -> tm -> Prop :=
+    | fpairp : forall i x,
+                free i x ->
+                free i (pairp x)
+    | fzerop : forall i x,
+                free i x ->
+                free i (zerop x)
+    | fcar : forall i x,
+                free i x ->
+                free i (car x)
+    | fcdr : forall i x,
+                free i x ->
+                free i (cdr x)
+    | fapp0 : forall i x y,
+                free i x ->
+                free i (sapp x y)
+    | fapp1 : forall i x y,
+                free i y ->
+                free i (sapp x y)
+    | fadd0 : forall i x y,
+                free i x ->
+                free i (sadd x y)
+    | fadd1 : forall i x y,
+                free i y ->
+                free i (sadd x y)
+    | fmult0 : forall i x y,
+                free i x ->
+                free i (smult x y)
+    | fmult1 : forall i x y,
+                free i y ->
+                free i (smult x y)
+    | fcomp0 : forall i x y,
+                free i x ->
+                free i (sadd x y)
+    | fcomp1 : forall i x y,
+                free i y ->
+                free i (sadd x y)
+
+    
