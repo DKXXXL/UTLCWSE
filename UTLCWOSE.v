@@ -515,6 +515,15 @@ Inductive free : id -> tm -> Prop :=
     | fcdr : forall i x,
                 free i x ->
                 free i (cdr x)
+    | fcond0 : forall i x y z,
+                free i x ->
+                free i (cond x y z)
+    | fcond1 : forall i x y z,
+                free i y ->
+                free i (cond x y z)
+    | fcond2 : forall i x y z,
+                free i z ->
+                free i (cond x y z)
     | fapp0 : forall i x y,
                 free i x ->
                 free i (sapp x y)
@@ -533,11 +542,60 @@ Inductive free : id -> tm -> Prop :=
     | fmult1 : forall i x y,
                 free i y ->
                 free i (smult x y)
+    | fneg : forall i x,
+                free i x ->
+                free i (sneg x)
+    | finv : forall i x,
+                free i x ->
+                free i (sinverse x)
     | fcomp0 : forall i x y,
                 free i x ->
                 free i (sadd x y)
     | fcomp1 : forall i x y,
                 free i y ->
                 free i (sadd x y)
+    | fvar : forall i,
+                free i (SVar i)
+    | fpair0 : forall i x y,
+                free i x ->
+                free i (SPair x y)
+    | fpair1 : forall i x y,
+                free i y ->
+                free i (SPair x y)
+    | ffun : forall i j x,
+                free i x ->
+                i <> j ->
+                free i (SFun j x)
+    | fseq0 : forall i x y,
+                free i x ->
+                free i (SSeq x y)
+    | fseq1 : forall i x y,
+                free i y ->
+                free i (SSeq x y)
+    | flet0: forall i j x y,
+                free i x ->
+                free i (SLet j x y)
+    | flet1 : forall i j x y,
+                free i y ->
+                i <> j ->
+                free i (SLet j x y)
+    | ffix : forall i f v body,
+                free i body ->
+                i <> f ->
+                i <> v ->
+                free i (SFix f v body)
+    | fsys : forall i j e,
+                free i e ->
+                free i (SSys j e).
 
+(* Function Like*)
+Definition 
+
+Inductive flike2  : (tm -> tm) -> Prop :=
+    | flpairp : flike2  pairp
+    | flzerop : flike2  zerop
+    | flcar : flike2 car
+    | flcdr : flike2 cdr
+    | flsneg : flike2 sneg
+    | 
     
