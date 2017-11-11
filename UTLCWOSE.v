@@ -5,6 +5,7 @@ Require Import Coq.Strings.String.
 Require Import Quotient.
 Import Quotient.Quotient.
 Require Import Context.
+Import Context.Context.
 Require Import Coq.Lists.List.
 Require Import LibTactics.
 
@@ -58,7 +59,7 @@ Inductive tm : Type :=
     | SString : literal -> tm 
     | SPair : tm -> tm -> tm
     | SFun : id -> tm  -> tm
-    | SSymbol : tm -> tm
+    | SSymbol : literal -> tm
     (* Statement *)
     | SSeq : tm -> tm -> tm
     | SLet : id -> tm -> tm -> tm
@@ -70,6 +71,7 @@ Hint Constructors tm.
 Fixpoint subst (i : id) (to : tm) (org : tm) : tm :=
     match org with
     | pairp k => pairp (subst i to k)
+    | zerop k => zerop (subst i to k)
     | car p => car (subst i to p)
     | cdr p => cdr (subst i to p)
     | cond j b1 b2 => cond (subst i to j) (subst i to b1) (subst i to b2)
@@ -111,9 +113,7 @@ Inductive Value : tm -> Prop :=
         Value (SFun id tm)
     | vFix : forall idf idx tm,
         Value (SFix idf idx tm)
-    | vSymbol : forall q,
-            (forall pre post,
-            q <> (SPair pre post)) ->
+    | vSymbol : forall q, 
             Value (SSymbol q).
 
 Hint Constructors Value.
@@ -220,8 +220,6 @@ Inductive step : (tm * Output) -> (tm * Output) -> Prop :=
     | ssys1 : forall d a o1,
                     Value a ->
                     step (SSys d a, o1) (STrue, (d,a):: o1)
-    | ssymbol : forall a b o1,
-                step ((SSymbol (SPair a b)), o1) ((SPair (SSymbol a) (SSymbol b)), o1)
     | sseq0 : forall a a' b o1 o2,
                 step (a, o1) (a', o2) ->
                 step ((SSeq a b), o1) ((SSeq a' b), o2)
@@ -319,7 +317,6 @@ Ltac forwardALL :=
      glize y o1 o2 0.
      induction h1; intros o2 o1 y h2; 
      inversion h2; subst.
-     destruct (H a b eq_refl).
  Qed.
  
 
@@ -550,10 +547,10 @@ Inductive free : id -> tm -> Prop :=
                 free i (sinverse x)
     | fcomp0 : forall i x y,
                 free i x ->
-                free i (sadd x y)
+                free i (scomp x y)
     | fcomp1 : forall i x y,
                 free i y ->
-                free i (sadd x y)
+                free i (scomp x y)
     | fvar : forall i,
                 free i (SVar i)
     | fpair0 : forall i x y,
@@ -588,14 +585,406 @@ Inductive free : id -> tm -> Prop :=
                 free i e ->
                 free i (SSys j e).
 
-(* Function Like*)
-Definition 
 
-Inductive flike2  : (tm -> tm) -> Prop :=
-    | flpairp : flike2  pairp
-    | flzerop : flike2  zerop
-    | flcar : flike2 car
-    | flcdr : flike2 cdr
-    | flsneg : flike2 sneg
-    | 
+Inductive closed : tm -> Prop :=
+    | cpairp : forall x,
+                closed x ->
+                closed (pairp x)
+    | czerop : forall x,
+                closed x ->
+                closed (zerop x)
+    | ccar: forall x,
+                closed x ->
+                closed (car x)
+    | ccdr: forall x,
+                closed x ->
+                closed (cdr x)
+    | ccond : forall x y z,
+                closed x ->
+                closed y ->
+                closed z ->
+                closed (cond x y z)
+    | capp : forall x y,
+                closed x ->
+                closed y ->
+                closed (sapp x y)
+    | cadd : forall x y,
+                closed x ->
+                closed y ->
+                closed (sadd x y)
+    | cmult : forall x y,
+                closed x ->
+                closed y ->
+                closed (smult x y)
+    | cneg : forall x,
+                closed x ->
+                closed (sneg x)
+    | cinverse : forall x,
+                closed x ->
+                closed (sinverse x)
+    | ccomp : forall x y,
+                closed x ->
+                closed y ->
+                closed (scomp x y)
+    | ctrue : closed (STrue)
+    | cfalse : closed (SFalse)
+    | cnum : forall n, closed (SNum n)
+    | cdouble : forall n, closed (SDouble n)
+    | cstring : forall s, closed (SString s)
+    | cpair : forall x y,
+                closed x ->
+                closed y ->
+                closed (SPair x y)
+    | cfun : forall i body,
+                closed ([i := STrue] body) ->
+                closed (SFun i body)
+    | csymbol : forall s, closed (SSymbol s)
+    | cseq : forall a b,
+                closed a ->
+                closed b ->
+                closed (SSeq a b)
+    | clet : forall i bind body,
+                closed bind ->
+                closed ([i := STrue] body) ->
+                closed (SLet i bind body)
+    | cfix : forall i j body,
+                closed ([i := STrue] [j := STrue] body) ->
+                closed (SFix i j body)
+    | csys : forall i e,
+                closed e ->
+                closed (SSys i e).
+
+Hint Constructors free.
+Hint Constructors closed.
+
+Ltac contra_free_unfree :=
+try (
+    intros; 
+    match goal with
+    | H0 : ~ (?X) , H1 : ?X |- _ => destruct (H0 H1)
+    end
+).
+
+Ltac IntroDestructAndAuto_free :=
+try (intros;subst;
+try match goal with
+| H : (free _ (_ _)) |- _ => inversion H; subst; clear H
+end; 
+subst;
+forwardALL; subst;
+try contra_free_unfree;
+try match goal with
+| H : _ = _ |- _ => inversion H; subst; clear H
+end;
+eauto
+).
+
+Ltac contra_inversionUnfree :=
+try (intros; subst;
+try match goal with
+| H: (free _ _) |- _ => inversion H; subst; clear H; contra_inversionUnfree
+| |- _ => idtac
+end
+).
+
+
+Lemma subst_keep_free :
+    forall i j x,
+        free i x ->
+        i <> j ->
+        free i ([j := STrue] x).
+intros i j x h;
+glize j 0.
+induction h; intros; subst; cbn; eauto.
+(* Case SVar *)
+rewrite eq_id_dec_dif1; eauto.
+destruct (eq_id_dec j0 j); eauto.
+destruct (eq_id_dec j0 j); eauto.
+destruct (eq_id_dec j0 j); eauto.
+destruct (eq_id_dec j f); eauto.
+destruct (eq_id_dec j v); eauto.
+Qed.
+(*
+Ltac rewrite_right_to_left_in_subst_dupli :=
+match goal with
+| H : forall _, ( _ = _ )|- _ => idtac H; repeat erewrite <- H; clear H; rewrite_right_to_left_in_subst_dupli
+| |- _ => idtac 0
+end.
+
+
+Lemma weak_subst_dupli:
+    forall i x,
+        [i := STrue] x = [i := STrue] ([i := STrue] x).
+
+intros i x; glize i 0;
+induction x; intros; subst; cbn; eauto;
+rewrite_right_to_left_in_subst_dupli; eauto.
+destruct (eq_id_dec i0 i); eauto.
+compute. rewrite eq_id_dec_dif0; eauto.
+destruct (eq_id_dec i0 i); eauto.
+Abort.
+
+
+*)
+
+
+Lemma closed_imply_nofree :
+    forall t,
+        closed t -> (forall i, ~free i t).
+    
+intros t h;
+induction h; intros;intro;
+IntroDestructAndAuto_free.
+contra_inversionUnfree.
+contra_inversionUnfree.
+assert (free i0 ([i := STrue] body)) as HHH.
+eapply subst_keep_free; eauto.
+destruct (IHh _ HHH).
+assert (free i0 ([i := STrue] body)) as HHH.
+eapply subst_keep_free; eauto.
+destruct (IHh2 _ HHH).
+assert (free i0 ([i := STrue] [j:= STrue] body)).
+assert (free i0 ([j := STrue] body)).
+eapply subst_keep_free; eauto.
+eapply subst_keep_free; eauto.
+destruct (IHh _ H0).
+Unshelve.
+auto. auto. auto. auto.
+auto. auto. auto. auto.
+auto. auto. auto. auto.
+auto.
+Qed.
+
+Ltac destructALL :=
+    match goal with
+    | H : {_} + {_} |- _ => destruct H; destructALL
+    | |- _ => idtac
+    end.
+
+Ltac IntroDestructAndAuto_closed :=
+    try (intros;subst;
+    try match goal with
+    | H : (closed (_ _)) |- _ => inversion H; subst; clear H
+    end; 
+    subst;
+    forwardALL; subst;
+    try contra_free_unfree;
+    try match goal with
+    | H : _ = _ |- _ => inversion H; subst; clear H
+    end;
+    eauto
+    ).
+
+Ltac byGuess_closed_dec :=
+    match goal with
+    | H : ~ closed _ |- _ => right; intro; IntroDestructAndAuto_closed;fail
+    | H : closed _ |- _ => left; eauto;fail
+    | |- _ => try (left; eauto; fail);
+                try (right; intro;IntroDestructAndAuto_closed; fail); idtac
+    end.
+
+(*
+    Now I really want to prove a thm:
+        {closed x} + {exists i, free i x}.
+    
+    My idea is to prove 
+        {closed x} + {~ closed x} first;
+    then prove 
+     ~ closed x -> exists i, free i x.
+    
+*)
+
+
+
+Fixpoint check_closed (l : Context) (t : tm) : bool :=
+    match t with
+    | pairp a => check_closed l a
+    | zerop a => check_closed l a 
+    | car a => check_closed l a   
+    | cdr a => check_closed l a 
+    | cond a b c => andb (check_closed l a)
+                        (andb (check_closed l b)
+                            (check_closed l c))
+    | sapp a b => andb (check_closed l a) (check_closed l b)
+    | sadd a b => andb (check_closed l a) (check_closed l b)
+    | smult a b =>andb (check_closed l a) (check_closed l b)
+    | sneg a => check_closed l a
+    | sinverse a => check_closed l a
+    | scomp a b => andb (check_closed l a) (check_closed l b)
+    | SVar i => byContextb l i
+    | STrue => true
+    | SFalse => true 
+    | SNum a => true 
+    | SDouble a => true 
+    | SString a => true 
+    | SPair a b => andb (check_closed l a) (check_closed l b)
+    | SFun i b => check_closed (update i 0 l) b
+    | SSymbol a => true 
+    | SSeq a b => andb (check_closed l a) (check_closed l b)
+    | SLet i bind body => andb (check_closed l bind) (check_closed (update i 0 l) body)
+    | SFix f x body => check_closed (update f 0 (update x 0 l)) (body)
+    | SSys _ e => check_closed l e
+    end.
+
+Definition checkclosed := check_closed empty.
+
+Lemma andb_keep_true :
+    forall a b,
+        andb a b = true ->
+        a = true /\ b = true.
+    destruct a; destruct b; eauto.
+Qed.
+
+Ltac destructALLANDB :=
+    match goal with
+    | H : andb _ _ = true |- _ => destruct (andb_keep_true _ _ H); 
+                                clear H; destructALLANDB
+    | |- _ => idtac
+    end.
+
+Lemma andb_keep_true0:
+    forall a b,
+        a = true ->
+        b = true ->
+        andb a b = true.
+    intros;subst; compute; auto.
+Qed.
+
+Ltac destructALLANDBINGOAL :=
+match goal with
+| |- andb _ _ = true => 
+    repeat apply andb_keep_true0
+| |- _ => idtac
+end.
+
+    
+Lemma check_closed_subst_equ:
+    forall i t l,
+        check_closed (update i 0 l) t = true ->
+        check_closed l ([i := STrue] t) = true.
+    intros i t; glize i 0;
+    induction t; intros; 
+    try (cbn in *;destructALLANDB;forwardALL; eauto; fail);
+    try (cbn in *; destructALLANDB; forwardALL;
+    destructALLANDBINGOAL; eauto; fail).
+    (* Case SVar *)
+    cbn in *.
+    destruct (eq_id_dec i i0); subst; eauto.
+    rewrite eq_id_dec_id; eauto.
+    cbv in H. 
+    rewrite eq_id_dec_dif0; eauto.
+    rewrite eq_id_dec_dif1 in H; eauto.
+    (* Case SFun *)
+    cbn [check_closed] in *. 
+    cbn [subst]. destruct (eq_id_dec i0 i); subst; eauto.
+    cbn [check_closed].
+    assert (update i 0 (update i 0 l) = update i 0 l).
+    apply ctxeq_ext. eapply eqShadow. eapply CtxeqId.
+    rewrite <- H0. auto.
+    cbn [check_closed]. 
+    assert (update i0 0 (update i 0 l) = update i 0 (update i0 0 l)).
+    apply ctxeq_ext. eapply eqPermute. eapply CtxeqId. auto.
+    rewrite <- H0 in H. forwardALL.
+    (* Case SLet *)
+    cbn in *;destructALLANDB;forwardALL.
+    destruct (eq_id_dec i0 i); subst; eauto;
+    cbn [check_closed]; destructALLANDBINGOAL; eauto.
+    assert (update i 0 (update i 0 l) = update i 0 l).
+    apply ctxeq_ext. eapply eqShadow. eapply CtxeqId.
+    rewrite H3 in H1. auto.
+    assert (update i0 0 (update i 0 l) = update i 0 (update i0 0 l)).
+    apply ctxeq_ext. eapply eqPermute. eapply CtxeqId. auto.
+    rewrite <- H3 in H1. forwardALL.
+    (* Case SFix *)
+
+    cbn in *. destruct (eq_id_dec i1 i); destruct (eq_id_dec i1 i0);
+    subst; eauto; cbn in *.
+    assert (update i0 0 (update i0 0 (update i0 0 l)) = update i0 0 (update i0 0 l)).
+    apply ctxeq_ext. eapply eqShadow. eapply CtxeqId.
+    rewrite H0 in H. auto.
+    assert (update i 0 (update i0 0 (update i 0 l)) = update i 0 (update i0 0 l)).
+        apply ctxeq_ext. eapply eqTrans. eapply eqPermute.
+        eapply CtxeqId. auto. eapply eqSymm. eapply eqTrans.
+        eapply eqPermute. eapply CtxeqId. auto.
+        eapply eqUpdate. eapply eqSymm. eapply eqShadow.
+        eapply CtxeqId. rewrite H0 in H; auto.
+    assert (update i 0 (update i0 0 (update i0 0 l)) = update i 0 (update i0 0 l)).
+        apply ctxeq_ext. eapply eqUpdate. eapply eqShadow. eapply CtxeqId.
+        rewrite H0 in H; auto.
+    assert (update i 0 (update i0 0 (update i1 0 l)) = update i1 0 (update i 0 (update i0 0 l))).
+        apply ctxeq_ext. eapply eqTrans. eapply eqUpdate.
+        eapply eqPermute; auto. eapply CtxeqId. eapply eqPermute; auto.
+        eapply CtxeqId. rewrite H0 in H; forwardALL; auto.
+
+Qed.
+
+
+
+Lemma closed_alg_valid0 :
+    forall t,
+        checkclosed t = true -> 
+        closed t.
+
+induction t; intros; 
+try (cbn in *; eauto;destructALLANDB; cbn in *; eauto;fail).
+cbn in *.
+inversion H.
+cbn in H. eapply cfun. 
+Abort.
+
+Ltac destructALL_in_Weak_freedec k :=
+    match goal with
+    | H : forall _, {_} + {_} |- _ => destruct (H k); clear H; destructALL_in_Weak_freedec k
+    | |- _ => idtac
+    end.
+
+Ltac byGuess_free :=
+    match goal with
+    | H : free _ _ |- _ => left; eauto
+    | H : ~ (free _ _)  |- _=> right; intro;
+        match goal with
+        | H : free _ _ |- _ => inversion H; subst; eauto; try contra_free_unfree
+        end
+    | |- _ => try (left; eauto; fail);
+              try (right; intro;
+              match goal with
+              | H : free _ _ |- _ => inversion H; subst; eauto; try contra_free_unfree
+              end; fail); idtac
+    end.
+
+Lemma weak_free_dec :
+    forall i t,
+        {free i t} + {~ free i t}.
+
+    intros i t; glize i 0.
+    induction t; 
+    try (intros j; destructALL_in_Weak_freedec j;
+    byGuess_free; fail).
+    (* Case SVar*)
+    
+    intros. destruct (eq_id_dec i0 i); subst; eauto.
+    right; intro; byGuess_free. inversion H; subst; eauto.
+    (* Case SFun*)
+    intros j; destructALL_in_Weak_freedec j; try (byGuess_free; fail).
+    destruct (eq_id_dec j i); subst; eauto.
+    right; intro. inversion H; subst; eauto.
+
+    (* Case SLet *)
+
+    intros j; destructALL_in_Weak_freedec j; try (byGuess_free; fail).
+    destruct (eq_id_dec j i); subst; eauto. right; intro. inversion H; subst; eauto.
+
+    (* Case SFix *)
+    intros j; destructALL_in_Weak_freedec j; try (byGuess_free; fail).
+    destruct (eq_id_dec j i); destruct (eq_id_dec j i0); subst; eauto;try (byGuess_free; fail).
+    right; intro. inversion H; subst; eauto.
+    right; intro. inversion H; subst; eauto.
+    right; intro. inversion H; subst; eauto.
+Qed.
+
+
+
+
+
+
     

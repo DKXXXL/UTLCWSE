@@ -2,22 +2,28 @@ Module Context.
 
 Require Import Maps.
 Require Import Coq.Relations.Relation_Definitions.
+Require Import LibTactics.
 
-Inductive Context {type : Type} : Type :=
+Inductive Context {type : Set} : Type :=
 | empty : Context
 | update : id -> type -> Context -> Context.
 
 Hint Constructors Context.
 
-Fixpoint byContext {type : Type} (ctx : Context) (i : id) : option type :=
+Fixpoint byContext {type : Set} (ctx : Context) (i : id) : option type :=
 match ctx with 
     | empty => None
     | update x Ty ctx' =>
         if (eq_id_dec i x) then Some Ty else byContext ctx' i
         end.
+Definition byContextb {type : Set} (ctx : Context) (i : id) : bool :=
+    match byContext (type := type) ctx i with
+    | Some _ => true 
+    | None => false
+    end.
 
 
-Definition context_equivalence {type : Type}  : relation Context :=
+Definition context_equivalence {type : Set}  : relation Context :=
         fun (x y : Context (type := type)) => forall i, byContext x i = byContext y i.
     
     Notation "x '=-=' y" := (context_equivalence x y) (at level 40).
@@ -27,20 +33,20 @@ Definition context_equivalence {type : Type}  : relation Context :=
     Print equiv.
 
     
-    Theorem refl_ctxeq {x : Type}:
+    Theorem refl_ctxeq {x : Set}:
         reflexive _ (context_equivalence (type := x )).
         unfold reflexive; unfold context_equivalence. auto.
     Qed.
     
     Hint Unfold reflexive.
 
-    Theorem symm_ctxeq {x : Type}:
+    Theorem symm_ctxeq {x : Set}:
         symmetric _ (context_equivalence (type := x)).
         unfold symmetric; unfold context_equivalence. auto.
     Qed.
 
     Hint Unfold symmetric.
-    Theorem trans_ctxeq {x : Type}:
+    Theorem trans_ctxeq {x : Set}:
     transitive _ (context_equivalence (type :=x)).
 
     unfold transitive.
@@ -51,7 +57,7 @@ Qed.
 
 Hint Unfold transitive.
 
-Theorem equiv_ctxeq {x : Type}:
+Theorem equiv_ctxeq {x : Set}:
     equiv _ (context_equivalence (type := x)).
 
     unfold equiv.
@@ -59,7 +65,7 @@ Theorem equiv_ctxeq {x : Type}:
     tauto.
 Qed.
     
-    Theorem update_shadow {z : Type}:
+    Theorem update_shadow {z : Set}:
         forall i (x y : z) (U V : Context (type := z)),
             U =-= V ->
             update i x (update i y U) =-= update i x V.
@@ -69,7 +75,7 @@ Qed.
     
     Qed.
     
-    Theorem update_permute {z : Type}:
+    Theorem update_permute {z : Set}:
         forall i j (x y : z) U V,
             i <> j ->
             U =-= V ->
@@ -80,7 +86,7 @@ Qed.
         destruct (H eq_refl).
     Qed.
     
-    Theorem update_inc {z : Type}:
+    Theorem update_inc {z : Set}:
         forall i (x: z) U V,
             U =-= V ->
             update i x U =-= update i x V.
@@ -90,7 +96,7 @@ Qed.
     Qed.
 
 
-Inductive CtxEq {z : Type} : Context (type := z) -> Context (type := z) -> Prop :=
+Inductive CtxEq {z : Set} : Context (type := z) -> Context (type := z) -> Prop :=
     | eqEmpty : CtxEq empty empty
     | eqUpdate : forall U V i x,
                 CtxEq U V ->
@@ -103,13 +109,21 @@ Inductive CtxEq {z : Type} : Context (type := z) -> Context (type := z) -> Prop 
     | eqShadow : forall U V i x y,
                 CtxEq U V ->
                 CtxEq (update i x (update i y U))
-                        (update i x U).
+                        (update i x U)
+    | eqSymm : forall U V,
+                CtxEq U V ->
+                 CtxEq V U
+    | eqTrans : forall U V W,
+                CtxEq U V ->
+                CtxEq V W ->
+                CtxEq U W.
+                        
 
 Hint Constructors CtxEq.
 
 
 Lemma byCtxEq_CtxEq:
-    forall {z: Type} (U V: Context (type := z)),
+    forall {z: Set} (U V: Context (type := z)),
         U =-= V ->
         CtxEq  U V.
 intros z U; induction U;
@@ -126,7 +140,7 @@ Abort.
 (* It's a little hard. Either some lemma is missing either it cannot be proved.*)
 
 Lemma CtxEq_byCtxEq :
-    forall {z: Type} (U V: Context (type := z)),
+    forall {z: Set} (U V: Context (type := z)),
         CtxEq  U V ->
         U =-= V.
 
@@ -137,13 +151,27 @@ Lemma CtxEq_byCtxEq :
     destruct (eq_id_dec i0 i); destruct (eq_id_dec i0 j); subst; auto.
     destruct (H eq_refl).
     destruct (eq_id_dec i0 i); subst; auto.
+    
+    eapply (trans_ctxeq); eauto. 
 Qed.
 
 Notation "x '-=-' y" := (CtxEq x y) (at level 41).
 
 Axiom ctxeq_ext :
-    forall {type :Type} (U V : Context (type := type)),
-        U -=- V <-> U = V.
+    forall {type :Set} (U V : Context (type := type)),
+        U -=- V -> U = V.
+
+
+
+Theorem CtxeqId:
+    forall {type : Set} (U : Context (type := type)),
+        U -=- U.
+    intros T U;
+    induction U; eauto.
+Qed.
+
+    
+    
 
 End Context.
 

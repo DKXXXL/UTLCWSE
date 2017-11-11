@@ -1,6 +1,7 @@
 Require Import Coq.Arith.Arith.
 Require Import Coq.Bool.Bool.
 Require Import Coq.Logic.FunctionalExtensionality.
+Require Import Coq.Relations.Relation_Definitions.
 
 Inductive id: Type :=
   |Id : nat -> id.
@@ -200,4 +201,26 @@ Lemma update_permute:
   intros; unfold update. apply t_update_permute. auto.
 Qed.
 
+Theorem symm_dif :
+  forall {Z : Type} (x y:Z),
+    x <> y ->
+    y <> x.
+    unfold not. intros. symmetry in H0; auto.
+Qed.
 
+
+Theorem eq_id_dec_dif0:
+forall (A:Type) (t f:A) x y,
+ x <> y ->
+ (if (eq_id_dec x y) then t else f) = f.
+ intros. destruct (eq_id_dec x y); eauto.
+ destruct (H e).
+Qed.
+
+Theorem eq_id_dec_dif1 :
+forall (A:Type) (t f:A) x y,
+  x <> y ->
+  (if (eq_id_dec y x) then t else f) = f.
+  intros.
+  eapply eq_id_dec_dif0. eapply symm_dif. auto.
+Qed.
