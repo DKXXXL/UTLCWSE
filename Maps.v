@@ -224,3 +224,34 @@ forall (A:Type) (t f:A) x y,
   intros.
   eapply eq_id_dec_dif0. eapply symm_dif. auto.
 Qed.
+
+
+Lemma exclusive_mid:
+forall A,
+  {A} + {~A} ->
+  (A <-> ~~A).
+
+split; intros.
+intro. destruct (H1 H0).
+destruct H; auto.
+destruct (H0 n).
+Defined.
+
+Lemma contrapositive:
+forall A B : Prop,
+(A -> B) ->
+(~B -> ~A).
+
+intros; intro; eauto.
+Defined.
+
+Lemma contrapositive_equiv:
+forall A B: Prop,
+{A} + {~A} ->
+{B} + {~B} ->
+((A -> B) <-> (~B -> ~A)).
+
+split; intros; destruct H; destruct H0; try tauto.
+Defined.
+
+

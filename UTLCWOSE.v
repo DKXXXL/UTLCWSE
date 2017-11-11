@@ -920,17 +920,6 @@ Qed.
 
 
 
-Lemma closed_alg_valid0 :
-    forall t,
-        checkclosed t = true -> 
-        closed t.
-
-induction t; intros; 
-try (cbn in *; eauto;destructALLANDB; cbn in *; eauto;fail).
-cbn in *.
-inversion H.
-cbn in H. eapply cfun. 
-Abort.
 
 Ltac destructALL_in_Weak_freedec k :=
     match goal with
@@ -983,8 +972,228 @@ Lemma weak_free_dec :
 Qed.
 
 
+Lemma closed_alg_valid0 :
+forall t,
+    checkclosed t = true -> 
+    closed t.
+
+induction t; intros; 
+try (cbn in *; eauto;destructALLANDB; cbn in *; eauto;fail).
+cbn in *.
+inversion H.
+eapply cfun. 
+Abort.
 
 
+Inductive rel_closed : Context (type:= nat) -> tm -> Prop :=
+    | rcpairp : forall C t,
+                rel_closed C t ->
+                rel_closed C (pairp t)
+    | rczerop : forall C t,
+                rel_closed C t ->
+                rel_closed C (zerop t)
+    | rccar : forall C t,
+                rel_closed C t ->
+                rel_closed C (car t)
+    | rccdr : forall C t,
+                rel_closed C t ->
+                rel_closed C (cdr t)
+    | rccond : forall C x y z,
+                rel_closed C x ->
+                rel_closed C y ->
+                rel_closed C z ->
+                rel_closed C (cond x y z)
+    | rcapp : forall C x y,
+                rel_closed C x ->
+                rel_closed C y ->
+                rel_closed C (sapp x y)
+    | rcadd : forall C x y,
+                rel_closed C x ->
+                rel_closed C y ->
+                rel_closed C (sadd x y)
+    | rcmult : forall C x y,
+                rel_closed C x ->
+                rel_closed C y ->
+                rel_closed C (smult x y)
+    | rcneg : forall C x,
+                rel_closed C x ->
+                rel_closed C (sneg x)
+    | rcinv : forall C x,
+                rel_closed C x ->
+                rel_closed C (sinverse x)
+    | rccomp : forall C x y,
+                rel_closed C x ->
+                rel_closed C y ->
+                rel_closed C (scomp x y)
+    | rcvar : forall C x,
+                byContextb C x = true ->
+                rel_closed C (SVar x)
+    | rctrue : forall C,
+                rel_closed C STrue
+    | rcfalse : forall C,
+                rel_closed C SFalse
+    | rcnum : forall C n,
+                rel_closed C (SNum n)
+    | rcdouble : forall C n,
+                rel_closed C (SDouble n)
+    | rcstring : forall C s,
+                rel_closed C (SString s)
+    | rcpair : forall C x y,
+                rel_closed C x ->
+                rel_closed C y ->
+                rel_closed C (SPair x y)
+    | rcfun : forall C i x,
+                rel_closed (update i 0 C) x ->
+                rel_closed C (SFun i x)
+    | rcsymbol : forall C i,
+                rel_closed C (SSymbol i)
+    | rcseq : forall C x y,
+                rel_closed C x ->
+                rel_closed C y ->
+                rel_closed C (SSeq x y)
+    | rclet : forall C i bind body,
+                rel_closed C bind ->
+                rel_closed (update i 0 C) body ->
+                rel_closed C (SLet i bind body)
+    | rcfix : forall C f x body,
+                rel_closed (update f 0 (update x 0 C)) body ->
+                rel_closed C (SFix f x body)
+    | rcsys : forall C i e,
+                rel_closed C e ->
+                rel_closed C (SSys i e).
+
+Hint Constructors rel_closed.
+
+Lemma inductionalize_of_check_closed0 :
+    forall C x,
+        check_closed C x = true ->
+        rel_closed C x.
+
+    intros C x; glize C 0.
+    induction x; cbn in *; intros; try destructALLANDB;  eauto.
+   Unshelve.
 
 
+Qed.
+
+Lemma andb_false_or :
+    forall x y,
+        andb x y = false ->
+        x = false \/ y = false.
+    intros x y;
+    destruct x; destruct y; subst; eauto.
+Qed.
+
+Ltac destructALLANDBFalse  :=
+    match goal with
+    | H: andb _ _ = false |- _ => 
+        destruct (andb_false_or _ _ H); clear H; destructALLANDBFalse
+    | |- _ => idtac
+    end.
+
+Lemma inductionalize_of_check_closed1:
+    forall C x,
+        check_closed C x = false ->
+        ~ (rel_closed C x).
     
+    intros C x h1; intro.
+    glize h1 0.
+    induction H; intros hhh; 
+    try (inversion hhh; subst; try destructALLANDBFalse; eauto;fail).
+    (* Case SVar*)
+    cbn in *. rewrite hhh in H; inversion H.
+Qed.
+
+Definition rclosed := rel_closed empty.
+
+
+Theorem rel_closed_dec:
+    forall C x,
+        {rel_closed C x} + {~rel_closed C x}.
+    
+    intros C x.
+    destruct (check_closed C x) eqn: h.
+    left; apply inductionalize_of_check_closed0; auto.
+    right; apply inductionalize_of_check_closed1; auto.
+Qed.
+
+Theorem rclosed_dec:
+    forall x,
+        {rclosed x} + {~rclosed x}.
+    
+    unfold rclosed.
+    apply rel_closed_dec.
+Qed.
+
+Hint Resolve rel_closed_dec rclosed_dec contrapositive.
+
+Ltac destruct_exists :=
+    match goal with
+    | H0 : exists _, _ |- _ =>
+        destruct H0; destruct_exists
+    | |- _ => idtac
+    end.
+
+
+
+Ltac not_r_closed_use_induction :=
+    match goal with
+    | H0 : ~ rel_closed ?A (?B1 ?B2) ,
+        H1 : ~ rel_closed ?C ?D -> ?E |- _=>
+        idtac H0;
+        assert (~rel_closed A (B1 B2) -> ~rel_closed C D); [eauto 4; fail | idtac];
+        assert (E); [eauto; fail | idtac]; eauto; clear H1 ;eauto; destruct_exists; eauto ;fail
+    | |- _ => idtac
+    end.
+
+
+
+Lemma not_rclosed_means_has_free:
+    forall x,
+        ~rclosed x ->
+        exists i, free i x.
+    unfold rclosed;
+    intros x;
+    assert (forall (x: tm) (B: Prop), (rel_closed empty x -> B) -> (~B -> ~rel_closed empty x)).
+    intros.
+    eapply contrapositive. apply rel_closed_dec. apply H. auto.
+    induction x; intros;
+    not_r_closed_use_induction. 
+    Focus 13.
+Abort.
+
+(*
+    Now I need several tools:
+        1. WOC : Context -> Prop
+            WellOrderedContext
+        2. Every context can have a well ordered
+            form. (A lemma)
+        
+        4. I have to modify the definition of rel_closed,
+            especially the part
+                cvar into:
+                cvar : forall i,
+                        rel_closed (update i 0 empty) (SVar i)
+        5. After modification of the definition,
+            I can prove a thm:
+                forall C i x,
+                    rel_closed (update i 0 C) x ->
+                    free i x.
+        3. forall term,
+            exists C : Context,
+                rel_closed C term. (A lemma)
+        Then I can prove:
+            ~rclosed t -> exists i, free i t. 
+        And With help of 1 and 2,
+             I may can achieve the fact that
+                'rel_closed' is decidable,
+                in which case, 
+                    check_closed C x = true ->
+                    rel_closed C x
+                and 
+                    check_closed C x = false ->
+                    ~ rel_closed C x
+                are what matter.
+
+
+*)
